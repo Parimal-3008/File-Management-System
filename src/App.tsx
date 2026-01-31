@@ -1,6 +1,6 @@
 import "./App.css";
 import { Routes, Route } from "react-router-dom";
-import Table from "./pages/Table";
+import Table from "./Table";
 import { useEffect } from "react";
 import { initDB } from "./db/indexDb";
 

@@ -1,4 +1,4 @@
-const TableRow = ({ user }) => {
+const TableRow = ({ row }) => {
   return (
     <div
       style={{
@@ -8,9 +8,9 @@ const TableRow = ({ user }) => {
       }}
     >
       <p>
-        <strong>{user.name}</strong>
+        <strong>{row.name}</strong>
       </p>
-      <div>{user.description}</div>
+      <div>{row.description}</div>
     </div>
   );
 };
