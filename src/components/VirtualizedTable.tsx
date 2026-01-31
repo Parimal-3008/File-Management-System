@@ -59,7 +59,7 @@ const STATUS_CLASSES: Record<string, string> = {
 const MemoizedTable = memo<React.ComponentProps<"table">>(
   ({ style, ...props }) => (
     <table {...props} style={{ ...TABLE_STYLE, ...style }} />
-  ),
+  )
 );
 MemoizedTable.displayName = "MemoizedTable";
 
@@ -77,7 +77,7 @@ const MemoizedTableRow = memo<
   const row = context?.data?.[index];
 
   const handleDoubleClick = useCallback(() => {
-    if (row && context?.onRowDoubleClick) {
+    if (row && context?.onRowDoubleClick && row.type === "folder") {
       context.onRowDoubleClick(row);
     }
   }, [row, context]);
@@ -189,7 +189,7 @@ const HeaderCell = memo<{ column: Column }>(({ column }) => {
       background:
         "linear-gradient(to right, rgb(37, 99, 235), rgb(29, 78, 216))",
     }),
-    [column.width],
+    [column.width]
   );
 
   return (
@@ -218,11 +218,11 @@ const VirtuosoTable = memo<VirtuosoTableProps>(
     totalCount,
   }) => {
     const [selectedRows, setSelectedRows] = useState<Set<number | string>>(
-      () => new Set(),
+      () => new Set()
     );
     const data = propData ?? [];
     const columns = propColumns ?? [];
-    
+
     // Use totalCount if provided, otherwise use data.length
     const effectiveTotalCount = totalCount ?? data.length;
 
@@ -233,7 +233,7 @@ const VirtuosoTable = memo<VirtuosoTableProps>(
         isSomeSelected:
           selectedRows.size > 0 && selectedRows.size < data.length,
       }),
-      [selectedRows.size, data.length],
+      [selectedRows.size, data.length]
     );
 
     // Memoize select all handler
@@ -245,7 +245,7 @@ const VirtuosoTable = memo<VirtuosoTableProps>(
         setSelectedRows(newSelected);
         onSelectionChange?.(Array.from(newSelected));
       },
-      [data, onSelectionChange],
+      [data, onSelectionChange]
     );
 
     // Create stable row select handlers using a Map to avoid recreation
@@ -262,7 +262,7 @@ const VirtuosoTable = memo<VirtuosoTableProps>(
           return newSelected;
         });
       },
-      [onSelectionChange],
+      [onSelectionChange]
     );
 
     // Memoize table components object
@@ -271,7 +271,7 @@ const VirtuosoTable = memo<VirtuosoTableProps>(
         Table: MemoizedTable,
         TableRow: MemoizedTableRow,
       }),
-      [],
+      []
     );
 
     // Context for passing data and handlers to table row
@@ -280,7 +280,7 @@ const VirtuosoTable = memo<VirtuosoTableProps>(
         data,
         onRowDoubleClick,
       }),
-      [data, onRowDoubleClick],
+      [data, onRowDoubleClick]
     );
 
     // Memoize fixed header content
@@ -299,7 +299,7 @@ const VirtuosoTable = memo<VirtuosoTableProps>(
           ))}
         </tr>
       ),
-      [showCheckbox, isAllSelected, isSomeSelected, handleSelectAll, columns],
+      [showCheckbox, isAllSelected, isSomeSelected, handleSelectAll, columns]
     );
 
     // Memoize item content renderer
@@ -356,7 +356,7 @@ const VirtuosoTable = memo<VirtuosoTableProps>(
           </>
         );
       },
-      [showCheckbox, selectedRows, handleRowSelect, columns, renderCell],
+      [showCheckbox, selectedRows, handleRowSelect, columns, renderCell]
     );
 
     // Memoize container style
@@ -392,7 +392,7 @@ const VirtuosoTable = memo<VirtuosoTableProps>(
         </div>
       </div>
     );
-  },
+  }
 );
 
 VirtuosoTable.displayName = "VirtuosoTable";
