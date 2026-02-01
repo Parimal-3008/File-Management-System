@@ -37,6 +37,10 @@ export function FileTable({
   const handleRowClick = (item: FileItem) => {
     setSelectedRows((prev) => {
       const newSelected = new Set(prev);
+      if (newSelected.has(item.id)) {
+        newSelected.delete(item.id);
+        return newSelected;
+      }
       newSelected.add(item.id);
       return newSelected;
     });
