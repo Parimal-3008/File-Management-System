@@ -23,9 +23,11 @@ interface VirtuosoTableProps {
   showCheckbox?: boolean;
   onSelectionChange?: (selectedIds: (number | string)[]) => void;
   renderCell?: (row: RowData, column: Column) => React.ReactNode;
+  onRowClick?: (row: RowData) => void;
   onRowDoubleClick?: (row: RowData) => void;
   onEndReached?: (index: number) => void;
   totalCount?: number;
+  selectedRows?: Set<number | string>;
 }
 
 const TABLE_STYLE: CSSProperties = {
@@ -66,15 +68,24 @@ MemoizedTable.displayName = "MemoizedTable";
 // Context for passing data and handlers to table row
 interface TableContext {
   data: RowData[];
+  onRowClick?: (row: RowData) => void;
   onRowDoubleClick?: (row: RowData) => void;
+  selectedRows?: Set<number | string>;
 }
 
-// Memoized TableRow component with double-click support
+// Memoized TableRow component with click, double-click support
 const MemoizedTableRow = memo<
   React.ComponentProps<"tr"> & { "data-index"?: number; context?: TableContext }
 >(({ style, context, ...props }) => {
   const index = props["data-index"] ?? 0;
   const row = context?.data?.[index];
+  const isSelected = row && context?.selectedRows?.has(row.id);
+
+  const handleClick = useCallback(() => {
+    if (row && context?.onRowClick) {
+      context.onRowClick(row);
+    }
+  }, [row, context]);
 
   const handleDoubleClick = useCallback(() => {
     if (row && context?.onRowDoubleClick && row.type === "folder") {
@@ -85,10 +96,15 @@ const MemoizedTableRow = memo<
   return (
     <tr
       {...props}
-      className={`hover:bg-blue-50 transition-colors cursor-pointer ${
-        index % 2 === 0 ? "bg-white" : "bg-slate-50"
+      className={`transition-colors cursor-pointer ${
+        isSelected
+          ? "bg-blue-200 hover:bg-blue-300"
+          : index % 2 === 0
+          ? "bg-white hover:bg-blue-50"
+          : "bg-slate-50 hover:bg-blue-50"
       }`}
       style={style}
+      onClick={handleClick}
       onDoubleClick={handleDoubleClick}
     />
   );
@@ -213,13 +229,17 @@ const VirtuosoTable = memo<VirtuosoTableProps>(
     showCheckbox = true,
     onSelectionChange,
     renderCell,
+    onRowClick,
     onRowDoubleClick,
     onEndReached,
     totalCount,
+    selectedRows: propSelectedRows,
   }) => {
-    const [selectedRows, setSelectedRows] = useState<Set<number | string>>(
-      () => new Set()
-    );
+    const [internalSelectedRows, setInternalSelectedRows] = useState<
+      Set<number | string>
+    >(() => new Set());
+    // Use provided selectedRows or internal state
+    const selectedRows = propSelectedRows ?? internalSelectedRows;
     const data = propData ?? [];
     const columns = propColumns ?? [];
 
@@ -242,27 +262,33 @@ const VirtuosoTable = memo<VirtuosoTableProps>(
         const newSelected = e.target.checked
           ? new Set(data.map((row) => row.id))
           : new Set<number | string>();
-        setSelectedRows(newSelected);
-        onSelectionChange?.(Array.from(newSelected));
+        if (propSelectedRows) {
+          onSelectionChange?.(Array.from(newSelected));
+        } else {
+          setInternalSelectedRows(newSelected);
+          onSelectionChange?.(Array.from(newSelected));
+        }
       },
-      [data, onSelectionChange]
+      [data, onSelectionChange, propSelectedRows]
     );
 
     // Create stable row select handlers using a Map to avoid recreation
     const handleRowSelect = useCallback(
       (id: number | string) => {
-        setSelectedRows((prev) => {
-          const newSelected = new Set(prev);
-          if (newSelected.has(id)) {
-            newSelected.delete(id);
-          } else {
-            newSelected.add(id);
-          }
+        const newSelected = new Set(selectedRows);
+        if (newSelected.has(id)) {
+          newSelected.delete(id);
+        } else {
+          newSelected.add(id);
+        }
+        if (propSelectedRows) {
           onSelectionChange?.(Array.from(newSelected));
-          return newSelected;
-        });
+        } else {
+          setInternalSelectedRows(newSelected);
+          onSelectionChange?.(Array.from(newSelected));
+        }
       },
-      [onSelectionChange]
+      [selectedRows, onSelectionChange, propSelectedRows]
     );
 
     // Memoize table components object
@@ -278,9 +304,11 @@ const VirtuosoTable = memo<VirtuosoTableProps>(
     const tableContext = useMemo<TableContext>(
       () => ({
         data,
+        onRowClick,
         onRowDoubleClick,
+        selectedRows,
       }),
-      [data, onRowDoubleClick]
+      [data, onRowClick, onRowDoubleClick, selectedRows]
     );
 
     // Memoize fixed header content

@@ -77,6 +77,7 @@ export default function Table() {
         isLoading={isLoading}
         onLoadMore={loadMore}
         onDoubleClick={navigateTo}
+        currentParentId={currentParentId}
       />
     </>
   );
