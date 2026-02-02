@@ -1,6 +1,12 @@
 import VirtualizedTable from "../components/VirtualizedTable";
 import type { FileItem } from "../zustand/fileStore";
 import { useFileStore } from "../zustand/fileStore";
+import {
+  copySelected,
+  cutSelected,
+  deleteSelected,
+  pasteClipboard,
+} from "../utils/fileActionsUtil";
 import { renderFileCell } from "./RenderCell";
 import { PREFETCH_THRESHOLD, FILE_TABLE_COLUMNS } from "../constants/contants";
 import {
@@ -110,47 +116,28 @@ export function FileTable({
   );
 
   const handleCopy = useCallback(() => {
-    const itemsToCopy = files.filter((file) => selectedRows.has(file.id));
-    fileStore.copyFiles(itemsToCopy);
+    copySelected(files, selectedRows, fileStore);
   }, [files, selectedRows, fileStore]);
 
   const handleCut = useCallback(() => {
-    const itemsToCut = files.filter((file) => selectedRows.has(file.id));
-    fileStore.cutFiles(itemsToCut);
+    cutSelected(files, selectedRows, fileStore);
   }, [files, selectedRows, fileStore]);
 
   const handlePaste = useCallback(() => {
-    const clipboardItems = fileStore.pasteFiles();
-    if (!clipboardItems) return;
-
-    // In a real implementation, you would copy/move the files here
-    console.log("Paste operation:", clipboardItems);
-
-    // Clear clipboard after cut operation
-    if (fileStore.clipboardOperation === "cut") {
-      fileStore.deleteFiles(clipboardItems.map((item) => item.id));
-      fileStore.clearClipboard();
-    }
-  }, [fileStore]);
+    pasteClipboard(files, totalCount, currentParentId, fileStore);
+  }, [files, totalCount, currentParentId, fileStore]);
 
   const handleDelete = useCallback(() => {
-    const idsToDelete = Array.from(selectedRows);
-    const deletedCount = idsToDelete.length;
-    fileStore.deleteFiles(idsToDelete);
     setSelectedRows(new Set());
-
-    // Update totalCount to reflect deleted files
-    const newTotalCount = Math.max(0, totalCount - deletedCount);
-    fileStore.setTotalCount(newTotalCount);
-
-    // If we have fewer files than threshold, trigger fetch for more data
-    if (
-      files.length - deletedCount < PREFETCH_THRESHOLD &&
-      newTotalCount > files.length - deletedCount
-    ) {
-      onLoadMore();
-    }
-  }, [selectedRows, fileStore, files.length, totalCount, onLoadMore]);
+    deleteSelected(
+      selectedRows,
+      files.length,
+      totalCount,
+      PREFETCH_THRESHOLD,
+      onLoadMore,
+      fileStore
+    );
+  }, [selectedRows, files.length, totalCount, onLoadMore, fileStore]);
 
   const contextMenuOptions: ContextMenuOption[] = [
     {
