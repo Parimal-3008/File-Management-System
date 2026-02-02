@@ -15,6 +15,11 @@ interface RowData {
   [key: string]: unknown;
 }
 
+interface ContextMenuPosition {
+  x: number;
+  y: number;
+}
+
 interface VirtuosoTableProps {
   data?: RowData[];
   columns?: Column[];
@@ -23,8 +28,9 @@ interface VirtuosoTableProps {
   showCheckbox?: boolean;
   onSelectionChange?: (selectedIds: (number | string)[]) => void;
   renderCell?: (row: RowData, column: Column) => React.ReactNode;
-  onRowClick?: (row: RowData) => void;
+  onRowClick?: (row: RowData, event: React.MouseEvent) => void;
   onRowDoubleClick?: (row: RowData) => void;
+  onContextMenu?: (row: RowData, position: ContextMenuPosition) => void;
   onEndReached?: (index: number) => void;
   totalCount?: number;
   selectedRows?: Set<number | string>;
@@ -68,8 +74,9 @@ MemoizedTable.displayName = "MemoizedTable";
 // Context for passing data and handlers to table row
 interface TableContext {
   data: RowData[];
-  onRowClick?: (row: RowData) => void;
+  onRowClick?: (row: RowData, event: React.MouseEvent) => void;
   onRowDoubleClick?: (row: RowData) => void;
+  onContextMenu?: (row: RowData, position: ContextMenuPosition) => void;
   selectedRows?: Set<number | string>;
 }
 
@@ -81,11 +88,14 @@ const MemoizedTableRow = memo<
   const row = context?.data?.[index];
   const isSelected = row && context?.selectedRows?.has(row.id);
 
-  const handleClick = useCallback(() => {
-    if (row && context?.onRowClick) {
-      context.onRowClick(row);
-    }
-  }, [row, context]);
+  const handleClick = useCallback(
+    (e: React.MouseEvent<HTMLTableRowElement>) => {
+      if (row && context?.onRowClick) {
+        context.onRowClick(row, e);
+      }
+    },
+    [row, context]
+  );
 
   const handleDoubleClick = useCallback(() => {
     if (row && context?.onRowDoubleClick && row.type === "folder") {
@@ -93,10 +103,23 @@ const MemoizedTableRow = memo<
     }
   }, [row, context]);
 
+  const handleContextMenu = useCallback(
+    (e: React.MouseEvent<HTMLTableRowElement>) => {
+      e.preventDefault();
+      if (row && context?.onContextMenu) {
+        context.onContextMenu(row, {
+          x: e.clientX,
+          y: e.clientY,
+        });
+      }
+    },
+    [row, context]
+  );
+
   return (
     <tr
       {...props}
-      className={`transition-colors cursor-pointer ${
+      className={`transition-colors cursor-pointer select-none ${
         isSelected
           ? "bg-blue-200 hover:bg-blue-300"
           : index % 2 === 0
@@ -106,6 +129,7 @@ const MemoizedTableRow = memo<
       style={style}
       onClick={handleClick}
       onDoubleClick={handleDoubleClick}
+      onContextMenu={handleContextMenu}
     />
   );
 });
@@ -231,6 +255,7 @@ const VirtuosoTable = memo<VirtuosoTableProps>(
     renderCell,
     onRowClick,
     onRowDoubleClick,
+    onContextMenu,
     onEndReached,
     totalCount,
     selectedRows: propSelectedRows,
@@ -306,9 +331,10 @@ const VirtuosoTable = memo<VirtuosoTableProps>(
         data,
         onRowClick,
         onRowDoubleClick,
+        onContextMenu,
         selectedRows,
       }),
-      [data, onRowClick, onRowDoubleClick, selectedRows]
+      [data, onRowClick, onRowDoubleClick, onContextMenu, selectedRows]
     );
 
     // Memoize fixed header content
