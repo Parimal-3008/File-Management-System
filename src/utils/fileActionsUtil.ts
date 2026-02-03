@@ -1,4 +1,5 @@
 import type { FileItem } from "../zustand/fileStore";
+import { deleteFilesByIds, insertFiles } from "../db/utils";
 
 type FileStoreApi = {
   clipboard: FileItem[] | null;
@@ -30,7 +31,7 @@ export function cutSelected(
   fileStore.cutFiles(itemsToCut);
 }
 
-export function pasteClipboard(
+export async function pasteClipboard(
   files: FileItem[],
   totalCount: number,
   currentParentId: string | undefined,
@@ -68,6 +69,8 @@ export function pasteClipboard(
     const itemsToAdd = movedItems.filter(
       (item) => !idsInCurrent.has(item.id)
     );
+    await deleteFilesByIds(clipboardItems.map((item) => item.id));
+    await insertFiles(movedItems);
     fileStore.setFiles([...updatedFiles, ...itemsToAdd]);
     if (itemsToAdd.length > 0) {
       fileStore.setTotalCount(totalCount + itemsToAdd.length);
@@ -77,11 +80,12 @@ export function pasteClipboard(
   }
 
   const copiedItems = clipboardItems.map(makeCopy);
+  await insertFiles(copiedItems);
   fileStore.setFiles([...files, ...copiedItems]);
   fileStore.setTotalCount(totalCount + copiedItems.length);
 }
 
-export function deleteSelected(
+export async function deleteSelected(
   selectedRows: Set<number | string>,
   filesLength: number,
   totalCount: number,
@@ -91,6 +95,7 @@ export function deleteSelected(
 ) {
   const idsToDelete = Array.from(selectedRows);
   const deletedCount = idsToDelete.length;
+  await deleteFilesByIds(idsToDelete);
   fileStore.deleteFiles(idsToDelete);
 
   const newTotalCount = Math.max(0, totalCount - deletedCount);

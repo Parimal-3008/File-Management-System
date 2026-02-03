@@ -57,6 +57,39 @@ export async function batchInsert(items: unknown[], batchSize = 1000) {
   db.close();
 }
 
+export async function insertFiles(items: FileRecord[]) {
+  const db = await openFileDB();
+  try {
+    const tx = db.transaction(STORE_NAME, "readwrite");
+    const store = tx.objectStore(STORE_NAME);
+    for (const item of items) {
+      store.put(item);
+    }
+    await tx.done;
+  } finally {
+    db.close();
+  }
+}
+
+export async function updateFiles(items: FileRecord[]) {
+  // put() upserts by keyPath, so update is same as insert for existing ids
+  return insertFiles(items);
+}
+
+export async function deleteFilesByIds(ids: (string | number)[]) {
+  const db = await openFileDB();
+  try {
+    const tx = db.transaction(STORE_NAME, "readwrite");
+    const store = tx.objectStore(STORE_NAME);
+    for (const id of ids) {
+      store.delete(id);
+    }
+    await tx.done;
+  } finally {
+    db.close();
+  }
+}
+
 // Count total children of a directory by parent_id
 // For root, parent_id is 0
 export async function countChildrenByParentId(

@@ -123,13 +123,13 @@ export function FileTable({
     cutSelected(files, selectedRows, fileStore);
   }, [files, selectedRows, fileStore]);
 
-  const handlePaste = useCallback(() => {
-    pasteClipboard(files, totalCount, currentParentId, fileStore);
+  const handlePaste = useCallback(async () => {
+    await pasteClipboard(files, totalCount, currentParentId, fileStore);
   }, [files, totalCount, currentParentId, fileStore]);
 
-  const handleDelete = useCallback(() => {
+  const handleDelete = useCallback(async () => {
     setSelectedRows(new Set());
-    deleteSelected(
+    await deleteSelected(
       selectedRows,
       files.length,
       totalCount,
