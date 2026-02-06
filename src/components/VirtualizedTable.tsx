@@ -1,7 +1,16 @@
-import React, { useState, useMemo, useCallback, memo } from "react";
+import React, {
+  useState,
+  useMemo,
+  useCallback,
+  memo,
+  useEffect,
+  useRef,
+} from "react";
 import type { CSSProperties } from "react";
 import { TableVirtuoso } from "react-virtuoso";
 import type { TableComponents } from "react-virtuoso";
+import { Resizable } from "re-resizable";
+import SwapHorizIcon from "@mui/icons-material/SwapHoriz";
 
 // ============ TYPES ============
 interface Column {
@@ -44,10 +53,12 @@ const TABLE_STYLE: CSSProperties = {
 };
 
 const CHECKBOX_CELL_STYLE: CSSProperties = {
-  width: "60px",
-  minWidth: "60px",
-  maxWidth: "60px",
+  width: "16px",
+  minWidth: "16px",
+  maxWidth: "16px",
 };
+
+const MIN_COLUMN_WIDTH = 160;
 
 const HEADER_CHECKBOX_STYLE: CSSProperties = {
   ...CHECKBOX_CELL_STYLE,
@@ -69,7 +80,7 @@ const MemoizedTable = memo<React.ComponentProps<"table">>(
     <table {...props} style={{ ...TABLE_STYLE, ...style }} />
   )
 );
-MemoizedTable.displayName = "MemoizedTable";
+// MemoizedTable.displayName = "MemoizedTable";
 
 // Context for passing data and handlers to table row
 interface TableContext {
@@ -133,7 +144,7 @@ const MemoizedTableRow = memo<
     />
   );
 });
-MemoizedTableRow.displayName = "MemoizedTableRow";
+// MemoizedTableRow.displayName = "MemoizedTableRow";
 
 // Memoized Status Badge
 const StatusBadge = memo<{ value: string }>(({ value }) => (
@@ -145,7 +156,7 @@ const StatusBadge = memo<{ value: string }>(({ value }) => (
     {value}
   </span>
 ));
-StatusBadge.displayName = "StatusBadge";
+// StatusBadge.displayName = "StatusBadge";
 
 // Memoized Cell component
 const TableCell = memo<{
@@ -175,7 +186,7 @@ const TableCell = memo<{
 
   return <>{String(value ?? "")}</>;
 });
-TableCell.displayName = "TableCell";
+// TableCell.displayName = "TableCell";
 
 // Memoized Checkbox component
 const RowCheckbox = memo<{
@@ -194,7 +205,7 @@ const RowCheckbox = memo<{
     />
   </td>
 ));
-RowCheckbox.displayName = "RowCheckbox";
+// RowCheckbox.displayName = "RowCheckbox";
 
 // Memoized Header Checkbox
 const HeaderCheckbox = memo<{
@@ -214,34 +225,7 @@ const HeaderCheckbox = memo<{
     />
   </th>
 ));
-HeaderCheckbox.displayName = "HeaderCheckbox";
-
-// Memoized Header Cell
-const HeaderCell = memo<{ column: Column }>(({ column }) => {
-  const style = useMemo<CSSProperties>(
-    () => ({
-      width: column.width,
-      minWidth: column.width,
-      maxWidth: column.width,
-      position: "sticky",
-      top: 0,
-      zIndex: 10,
-      background:
-        "linear-gradient(to right, rgb(37, 99, 235), rgb(29, 78, 216))",
-    }),
-    [column.width]
-  );
-
-  return (
-    <th
-      className="px-6 py-4 text-left text-xs font-semibold text-white uppercase tracking-wider border-b-2 border-blue-800"
-      style={style}
-    >
-      {column.label}
-    </th>
-  );
-});
-HeaderCell.displayName = "HeaderCell";
+// HeaderCheckbox.displayName = "HeaderCheckbox";
 
 // ============ MAIN COMPONENT ============
 const VirtuosoTable = memo<VirtuosoTableProps>(
@@ -263,10 +247,71 @@ const VirtuosoTable = memo<VirtuosoTableProps>(
     const [internalSelectedRows, setInternalSelectedRows] = useState<
       Set<number | string>
     >(() => new Set());
+
     // Use provided selectedRows or internal state
     const selectedRows = propSelectedRows ?? internalSelectedRows;
     const data = propData ?? [];
     const columns = propColumns ?? [];
+
+    const parseWidth = useCallback((width: string) => {
+      const parsed = Number.parseFloat(width);
+      return Number.isFinite(parsed) ? parsed : 120;
+    }, []);
+
+    // Initialize with parsed widths first
+    const [columnWidths, setColumnWidths] = useState<Record<string, number>>(
+      () =>
+        columns.reduce<Record<string, number>>((acc, col) => {
+          acc[col.key] = parseWidth(col.width);
+          return acc;
+        }, {})
+    );
+
+    // Track if widths have been initialized from DOM
+    const [widthsInitialized, setWidthsInitialized] = useState(false);
+
+    // Refs to store header cell elements
+    const headerCellRefs = useRef<Map<string, HTMLTableCellElement>>(new Map());
+
+    // Measure actual widths after initial render
+    useEffect(() => {
+      if (widthsInitialized || columns.length === 0) return;
+
+      // Wait for next frame to ensure DOM is rendered
+      requestAnimationFrame(() => {
+        const measuredWidths: Record<string, number> = {};
+        let hasAllMeasurements = true;
+
+        columns.forEach((column) => {
+          const cellRef = headerCellRefs.current.get(column.key);
+          if (cellRef) {
+            measuredWidths[column.key] = cellRef.offsetWidth;
+          } else {
+            hasAllMeasurements = false;
+          }
+        });
+
+        if (hasAllMeasurements && Object.keys(measuredWidths).length > 0) {
+          console.log("Measured widths from DOM:", measuredWidths);
+          setColumnWidths(measuredWidths);
+          setWidthsInitialized(true);
+        }
+      });
+    }, [columns, widthsInitialized]);
+
+    // Callback to store header cell refs
+    const setHeaderCellRef = useCallback(
+      (key: string, element: HTMLTableCellElement | null) => {
+        if (element) {
+          headerCellRefs.current.set(key, element);
+        } else {
+          headerCellRefs.current.delete(key);
+        }
+      },
+      []
+    );
+
+    console.log("Current column widths:", columnWidths);
 
     // Use totalCount if provided, otherwise use data.length
     const effectiveTotalCount = totalCount ?? data.length;
@@ -337,7 +382,6 @@ const VirtuosoTable = memo<VirtuosoTableProps>(
       [data, onRowClick, onRowDoubleClick, onContextMenu, selectedRows]
     );
 
-    // Memoize fixed header content
     const fixedHeaderContent = useCallback(
       () => (
         <tr className="bg-gradient-to-r from-blue-600 to-blue-700">
@@ -348,12 +392,89 @@ const VirtuosoTable = memo<VirtuosoTableProps>(
               onChange={handleSelectAll}
             />
           )}
-          {columns.map((column) => (
-            <HeaderCell key={column.key} column={column} />
-          ))}
+          {columns.map((column) => {
+            const width = columnWidths[column.key] ?? parseWidth(column.width);
+            return (
+              <th
+                key={column.key}
+                ref={(el) => setHeaderCellRef(column.key, el)}
+                className="border-b-2 border-blue-800 p-0 m-0"
+                style={{
+                  width,
+                  minWidth: MIN_COLUMN_WIDTH,
+                  position: "sticky",
+                  top: 0,
+                  zIndex: 10,
+                  background:
+                    "linear-gradient(to right, rgb(37, 99, 235), rgb(29, 78, 216))",
+                  boxSizing: "border-box",
+                }}
+              >
+                <Resizable
+                  size={{
+                    width: "100%",
+                    height: "100%",
+                  }}
+                  enable={{ right: true }}
+                  minWidth={MIN_COLUMN_WIDTH}
+                  onResizeStop={(_e, _dir, ref) => {
+                    const newWidth = ref.offsetWidth;
+                    console.log(`Resized ${column.key} to:`, newWidth);
+                    setColumnWidths((prev) => ({
+                      ...prev,
+                      [column.key]: newWidth,
+                    }));
+                  }}
+                  handleStyles={{
+                    right: {
+                      width: "20px",
+                      right: "0",
+                      top: "0",
+                      bottom: "0",
+                      cursor: "col-resize",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      background: "rgba(59, 130, 246, 0.2)",
+                    },
+                  }}
+                  handleClasses={{
+                    right: "hover:bg-blue-400",
+                  }}
+                  handleComponent={{
+                    right: (
+                      <SwapHorizIcon
+                        fontSize="small"
+                        sx={{ color: "rgba(255, 255, 255, 0.9)" }}
+                      />
+                    ),
+                  }}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    width: "100%",
+                    boxSizing: "border-box",
+                  }}
+                >
+                  <div className="px-6 py-4 text-left text-xs font-semibold text-white uppercase tracking-wider select-none w-full">
+                    {column.label}
+                  </div>
+                </Resizable>
+              </th>
+            );
+          })}
         </tr>
       ),
-      [showCheckbox, isAllSelected, isSomeSelected, handleSelectAll, columns]
+      [
+        showCheckbox,
+        isAllSelected,
+        isSomeSelected,
+        handleSelectAll,
+        columns,
+        columnWidths,
+        setHeaderCellRef,
+        parseWidth,
+      ]
     );
 
     // Memoize item content renderer
@@ -374,9 +495,12 @@ const VirtuosoTable = memo<VirtuosoTableProps>(
                   key={column.key}
                   className="px-6 py-4 text-sm text-slate-700 border-b border-slate-100 whitespace-nowrap text-left"
                   style={{
-                    width: column.width,
-                    minWidth: column.width,
-                    maxWidth: column.width,
+                    width: columnWidths[column.key] ?? parseWidth(column.width),
+                    minWidth:
+                      columnWidths[column.key] ?? parseWidth(column.width),
+                    maxWidth:
+                      columnWidths[column.key] ?? parseWidth(column.width),
+                    boxSizing: "border-box",
                   }}
                 >
                   <div className="text-gray-400 text-xs">Loading...</div>
@@ -399,9 +523,12 @@ const VirtuosoTable = memo<VirtuosoTableProps>(
                 key={column.key}
                 className="px-6 py-4 text-sm text-slate-700 border-b border-slate-100 whitespace-nowrap text-left"
                 style={{
-                  width: column.width,
-                  minWidth: column.width,
-                  maxWidth: column.width,
+                  width: columnWidths[column.key] ?? parseWidth(column.width),
+                  minWidth:
+                    columnWidths[column.key] ?? parseWidth(column.width),
+                  maxWidth:
+                    columnWidths[column.key] ?? parseWidth(column.width),
+                  boxSizing: "border-box",
                 }}
               >
                 <TableCell row={row} column={column} renderCell={renderCell} />
@@ -410,7 +537,15 @@ const VirtuosoTable = memo<VirtuosoTableProps>(
           </>
         );
       },
-      [showCheckbox, selectedRows, handleRowSelect, columns, renderCell]
+      [
+        showCheckbox,
+        selectedRows,
+        handleRowSelect,
+        columns,
+        renderCell,
+        columnWidths,
+        parseWidth,
+      ]
     );
 
     // Memoize container style
@@ -449,6 +584,6 @@ const VirtuosoTable = memo<VirtuosoTableProps>(
   }
 );
 
-VirtuosoTable.displayName = "VirtuosoTable";
+// VirtuosoTable.displayName = "VirtuosoTable";
 
 export default VirtuosoTable;
