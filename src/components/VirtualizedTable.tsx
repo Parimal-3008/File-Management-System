@@ -1,589 +1,208 @@
-import React, {
-  useState,
-  useMemo,
-  useCallback,
-  memo,
-  useEffect,
-  useRef,
-} from "react";
-import type { CSSProperties } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { TableVirtuoso } from "react-virtuoso";
-import type { TableComponents } from "react-virtuoso";
-import { Resizable } from "re-resizable";
-import SwapHorizIcon from "@mui/icons-material/SwapHoriz";
 
-// ============ TYPES ============
-interface Column {
-  key: string;
-  label: string;
-  width: string;
-}
-
-interface RowData {
-  id: number | string;
-  [key: string]: unknown;
-}
-
-interface ContextMenuPosition {
-  x: number;
-  y: number;
-}
-
-interface VirtuosoTableProps {
-  data?: RowData[];
-  columns?: Column[];
-  title?: string;
-  height?: string;
-  showCheckbox?: boolean;
-  onSelectionChange?: (selectedIds: (number | string)[]) => void;
-  renderCell?: (row: RowData, column: Column) => React.ReactNode;
-  onRowClick?: (row: RowData, event: React.MouseEvent) => void;
-  onRowDoubleClick?: (row: RowData) => void;
-  onContextMenu?: (row: RowData, position: ContextMenuPosition) => void;
-  onEndReached?: (index: number) => void;
-  totalCount?: number;
-  selectedRows?: Set<number | string>;
-}
-
-const TABLE_STYLE: CSSProperties = {
-  width: "100%",
-  tableLayout: "fixed",
-  borderCollapse: "separate",
-  borderSpacing: 0,
-};
-
-const CHECKBOX_CELL_STYLE: CSSProperties = {
-  width: "16px",
-  minWidth: "16px",
-  maxWidth: "16px",
-};
-
-const MIN_COLUMN_WIDTH = 160;
-
-const HEADER_CHECKBOX_STYLE: CSSProperties = {
-  ...CHECKBOX_CELL_STYLE,
-  position: "sticky",
-  top: 0,
-  zIndex: 10,
-  background: "linear-gradient(to right, rgb(37, 99, 235), rgb(29, 78, 216))",
-};
-
-const STATUS_CLASSES: Record<string, string> = {
-  Active: "bg-green-100 text-green-800",
-  "On Leave": "bg-yellow-100 text-yellow-800",
-  Remote: "bg-blue-100 text-blue-800",
-};
-
-// Memoized Table component
-const MemoizedTable = memo<React.ComponentProps<"table">>(
-  ({ style, ...props }) => (
-    <table {...props} style={{ ...TABLE_STYLE, ...style }} />
-  )
-);
-// MemoizedTable.displayName = "MemoizedTable";
-
-// Context for passing data and handlers to table row
-interface TableContext {
-  data: RowData[];
-  onRowClick?: (row: RowData, event: React.MouseEvent) => void;
-  onRowDoubleClick?: (row: RowData) => void;
-  onContextMenu?: (row: RowData, position: ContextMenuPosition) => void;
-  selectedRows?: Set<number | string>;
-}
-
-// Memoized TableRow component with click, double-click support
-const MemoizedTableRow = memo<
-  React.ComponentProps<"tr"> & { "data-index"?: number; context?: TableContext }
->(({ style, context, ...props }) => {
-  const index = props["data-index"] ?? 0;
-  const row = context?.data?.[index];
-  const isSelected = row && context?.selectedRows?.has(row.id);
-
-  const handleClick = useCallback(
-    (e: React.MouseEvent<HTMLTableRowElement>) => {
-      if (row && context?.onRowClick) {
-        context.onRowClick(row, e);
-      }
-    },
-    [row, context]
-  );
-
-  const handleDoubleClick = useCallback(() => {
-    if (row && context?.onRowDoubleClick && row.type === "folder") {
-      context.onRowDoubleClick(row);
-    }
-  }, [row, context]);
-
-  const handleContextMenu = useCallback(
-    (e: React.MouseEvent<HTMLTableRowElement>) => {
-      e.preventDefault();
-      if (row && context?.onContextMenu) {
-        context.onContextMenu(row, {
-          x: e.clientX,
-          y: e.clientY,
-        });
-      }
-    },
-    [row, context]
-  );
-
-  return (
-    <tr
-      {...props}
-      className={`transition-colors cursor-pointer select-none ${
-        isSelected
-          ? "bg-blue-200 hover:bg-blue-300"
-          : index % 2 === 0
-          ? "bg-white hover:bg-blue-50"
-          : "bg-slate-50 hover:bg-blue-50"
-      }`}
-      style={style}
-      onClick={handleClick}
-      onDoubleClick={handleDoubleClick}
-      onContextMenu={handleContextMenu}
-    />
-  );
-});
-// MemoizedTableRow.displayName = "MemoizedTableRow";
-
-// Memoized Status Badge
-const StatusBadge = memo<{ value: string }>(({ value }) => (
-  <span
-    className={`inline-flex px-3 py-1 rounded-full text-xs font-medium ${
-      STATUS_CLASSES[value] || "bg-gray-100 text-gray-800"
-    }`}
-  >
-    {value}
-  </span>
-));
-// StatusBadge.displayName = "StatusBadge";
-
-// Memoized Cell component
-const TableCell = memo<{
-  row: RowData;
-  column: Column;
-  renderCell?: (row: RowData, column: Column) => React.ReactNode;
-}>(({ row, column, renderCell }) => {
-  const value = row[column.key];
-
-  if (renderCell) {
-    return <>{renderCell(row, column)}</>;
-  }
-
-  if (column.key === "status" && typeof value === "string") {
-    return <StatusBadge value={value} />;
-  }
-
-  if (column.key === "id") {
-    return <span className="font-medium text-slate-900">{String(value)}</span>;
-  }
-
-  if (column.key === "salary") {
-    return (
-      <span className="font-semibold text-green-700">{String(value)}</span>
-    );
-  }
-
-  return <>{String(value ?? "")}</>;
-});
-// TableCell.displayName = "TableCell";
-
-// Memoized Checkbox component
-const RowCheckbox = memo<{
-  checked: boolean;
-  onChange: () => void;
-}>(({ checked, onChange }) => (
-  <td
-    className="px-6 py-4 border-b border-slate-100 text-left"
-    style={CHECKBOX_CELL_STYLE}
-  >
-    <input
-      type="checkbox"
-      checked={checked}
-      onChange={onChange}
-      className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-2 focus:ring-blue-500 cursor-pointer"
-    />
-  </td>
-));
-// RowCheckbox.displayName = "RowCheckbox";
-
-// Memoized Header Checkbox
-const HeaderCheckbox = memo<{
-  isAllSelected: boolean;
-  isSomeSelected: boolean;
-  onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
-}>(({ isAllSelected, isSomeSelected, onChange }) => (
-  <th className="px-6 py-4 text-left" style={HEADER_CHECKBOX_STYLE}>
-    <input
-      type="checkbox"
-      checked={isAllSelected}
-      ref={(el) => {
-        if (el) el.indeterminate = isSomeSelected;
-      }}
-      onChange={onChange}
-      className="w-4 h-4 rounded border-white text-blue-600 focus:ring-2 focus:ring-white cursor-pointer"
-    />
-  </th>
-));
-// HeaderCheckbox.displayName = "HeaderCheckbox";
+import type { RowData, TableContext, VirtuosoTableProps } from "./VirtualizedTable.types";
+import {
+  DataRowCells,
+  HeaderRow,
+  LoadingRowCells,
+  parseWidth,
+  tableComponents,
+} from "./VirtualizedTableComponents";
 
 // ============ MAIN COMPONENT ============
-const VirtuosoTable = memo<VirtuosoTableProps>(
-  ({
-    data: propData,
-    columns: propColumns,
-    title = "Employee Directory",
-    height = "600px",
-    showCheckbox = true,
-    onSelectionChange,
-    renderCell,
+const VirtuosoTable = ({
+  data: propData,
+  columns: propColumns,
+  title = "Employee Directory",
+  height = "600px",
+  showCheckbox = true,
+  onSelectionChange,
+  renderCell,
+  onRowClick,
+  onRowDoubleClick,
+  onContextMenu,
+  onEndReached,
+  totalCount,
+  selectedRows: propSelectedRows,
+}: VirtuosoTableProps) => {
+  const [internalSelectedRows, setInternalSelectedRows] = useState<
+    Set<number | string>
+  >(() => new Set());
+
+  // Use provided selectedRows or internal state
+  const selectedRows = propSelectedRows ?? internalSelectedRows;
+  const data = propData ?? [];
+  const columns = propColumns ?? [];
+
+  // Initialize with parsed widths first
+  const [columnWidths, setColumnWidths] = useState<Record<string, number>>(() =>
+    columns.reduce<Record<string, number>>((acc, col) => {
+      acc[col.key] = parseWidth(col.width);
+      return acc;
+    }, {})
+  );
+
+  // Track if widths have been initialized from DOM
+  const [widthsInitialized, setWidthsInitialized] = useState(false);
+
+  // Refs to store header cell elements
+  const headerCellRefs = useRef<Map<string, HTMLTableCellElement>>(new Map());
+
+  // Measure actual widths after initial render
+  useEffect(() => {
+    if (widthsInitialized || columns.length === 0) return;
+
+    // Wait for next frame to ensure DOM is rendered
+    requestAnimationFrame(() => {
+      const measuredWidths: Record<string, number> = {};
+      let hasAllMeasurements = true;
+
+      columns.forEach((column) => {
+        const cellRef = headerCellRefs.current.get(column.key);
+        if (cellRef) {
+          measuredWidths[column.key] = cellRef.offsetWidth;
+        } else {
+          hasAllMeasurements = false;
+        }
+      });
+
+      if (hasAllMeasurements && Object.keys(measuredWidths).length > 0) {
+        setColumnWidths(measuredWidths);
+        setWidthsInitialized(true);
+      }
+    });
+  }, [columns, widthsInitialized]);
+
+  // Callback to store header cell refs
+  const setHeaderCellRef = (
+    key: string,
+    element: HTMLTableCellElement | null
+  ) => {
+    if (element) {
+      headerCellRefs.current.set(key, element);
+    } else {
+      headerCellRefs.current.delete(key);
+    }
+  };
+
+  // Use totalCount if provided, otherwise use data.length
+  const effectiveTotalCount = totalCount ?? data.length;
+
+  const isAllSelected = selectedRows.size === data.length && data.length > 0;
+  const isSomeSelected =
+    selectedRows.size > 0 && selectedRows.size < data.length;
+
+  const handleSelectAll = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newSelected = e.target.checked
+      ? new Set(data.map((row) => row.id))
+      : new Set<number | string>();
+    if (propSelectedRows) {
+      onSelectionChange?.(Array.from(newSelected));
+    } else {
+      setInternalSelectedRows(newSelected);
+      onSelectionChange?.(Array.from(newSelected));
+    }
+  };
+
+  const handleRowSelect = (id: number | string) => {
+    const newSelected = new Set(selectedRows);
+    if (newSelected.has(id)) {
+      newSelected.delete(id);
+    } else {
+      newSelected.add(id);
+    }
+    if (propSelectedRows) {
+      onSelectionChange?.(Array.from(newSelected));
+    } else {
+      setInternalSelectedRows(newSelected);
+      onSelectionChange?.(Array.from(newSelected));
+    }
+  };
+
+  // Context for passing data and handlers to table row
+  const tableContext: TableContext = {
+    data,
     onRowClick,
     onRowDoubleClick,
     onContextMenu,
-    onEndReached,
-    totalCount,
-    selectedRows: propSelectedRows,
-  }) => {
-    const [internalSelectedRows, setInternalSelectedRows] = useState<
-      Set<number | string>
-    >(() => new Set());
+    selectedRows,
+  };
 
-    // Use provided selectedRows or internal state
-    const selectedRows = propSelectedRows ?? internalSelectedRows;
-    const data = propData ?? [];
-    const columns = propColumns ?? [];
+  const handleResizeStop = (key: string, newWidth: number) => {
+    setColumnWidths((prev) => ({
+      ...prev,
+      [key]: newWidth,
+    }));
+  };
 
-    const parseWidth = useCallback((width: string) => {
-      const parsed = Number.parseFloat(width);
-      return Number.isFinite(parsed) ? parsed : 120;
-    }, []);
+  const fixedHeaderContent = () => (
+    <HeaderRow
+      columns={columns}
+      columnWidths={columnWidths}
+      showCheckbox={showCheckbox}
+      isAllSelected={isAllSelected}
+      isSomeSelected={isSomeSelected}
+      onSelectAll={handleSelectAll}
+      setHeaderCellRef={setHeaderCellRef}
+      onResizeStop={handleResizeStop}
+    />
+  );
 
-    // Initialize with parsed widths first
-    const [columnWidths, setColumnWidths] = useState<Record<string, number>>(
-      () =>
-        columns.reduce<Record<string, number>>((acc, col) => {
-          acc[col.key] = parseWidth(col.width);
-          return acc;
-        }, {})
-    );
-
-    // Track if widths have been initialized from DOM
-    const [widthsInitialized, setWidthsInitialized] = useState(false);
-
-    // Refs to store header cell elements
-    const headerCellRefs = useRef<Map<string, HTMLTableCellElement>>(new Map());
-
-    // Measure actual widths after initial render
-    useEffect(() => {
-      if (widthsInitialized || columns.length === 0) return;
-
-      // Wait for next frame to ensure DOM is rendered
-      requestAnimationFrame(() => {
-        const measuredWidths: Record<string, number> = {};
-        let hasAllMeasurements = true;
-
-        columns.forEach((column) => {
-          const cellRef = headerCellRefs.current.get(column.key);
-          if (cellRef) {
-            measuredWidths[column.key] = cellRef.offsetWidth;
-          } else {
-            hasAllMeasurements = false;
-          }
-        });
-
-        if (hasAllMeasurements && Object.keys(measuredWidths).length > 0) {
-          console.log("Measured widths from DOM:", measuredWidths);
-          setColumnWidths(measuredWidths);
-          setWidthsInitialized(true);
-        }
-      });
-    }, [columns, widthsInitialized]);
-
-    // Callback to store header cell refs
-    const setHeaderCellRef = useCallback(
-      (key: string, element: HTMLTableCellElement | null) => {
-        if (element) {
-          headerCellRefs.current.set(key, element);
-        } else {
-          headerCellRefs.current.delete(key);
-        }
-      },
-      []
-    );
-
-    console.log("Current column widths:", columnWidths);
-
-    // Use totalCount if provided, otherwise use data.length
-    const effectiveTotalCount = totalCount ?? data.length;
-
-    // Memoize computed selection states
-    const { isAllSelected, isSomeSelected } = useMemo(
-      () => ({
-        isAllSelected: selectedRows.size === data.length && data.length > 0,
-        isSomeSelected:
-          selectedRows.size > 0 && selectedRows.size < data.length,
-      }),
-      [selectedRows.size, data.length]
-    );
-
-    // Memoize select all handler
-    const handleSelectAll = useCallback(
-      (e: React.ChangeEvent<HTMLInputElement>) => {
-        const newSelected = e.target.checked
-          ? new Set(data.map((row) => row.id))
-          : new Set<number | string>();
-        if (propSelectedRows) {
-          onSelectionChange?.(Array.from(newSelected));
-        } else {
-          setInternalSelectedRows(newSelected);
-          onSelectionChange?.(Array.from(newSelected));
-        }
-      },
-      [data, onSelectionChange, propSelectedRows]
-    );
-
-    // Create stable row select handlers using a Map to avoid recreation
-    const handleRowSelect = useCallback(
-      (id: number | string) => {
-        const newSelected = new Set(selectedRows);
-        if (newSelected.has(id)) {
-          newSelected.delete(id);
-        } else {
-          newSelected.add(id);
-        }
-        if (propSelectedRows) {
-          onSelectionChange?.(Array.from(newSelected));
-        } else {
-          setInternalSelectedRows(newSelected);
-          onSelectionChange?.(Array.from(newSelected));
-        }
-      },
-      [selectedRows, onSelectionChange, propSelectedRows]
-    );
-
-    // Memoize table components object
-    const tableComponents = useMemo<TableComponents<RowData, TableContext>>(
-      () => ({
-        Table: MemoizedTable,
-        TableRow: MemoizedTableRow,
-      }),
-      []
-    );
-
-    // Context for passing data and handlers to table row
-    const tableContext = useMemo<TableContext>(
-      () => ({
-        data,
-        onRowClick,
-        onRowDoubleClick,
-        onContextMenu,
-        selectedRows,
-      }),
-      [data, onRowClick, onRowDoubleClick, onContextMenu, selectedRows]
-    );
-
-    const fixedHeaderContent = useCallback(
-      () => (
-        <tr className="bg-gradient-to-r from-blue-600 to-blue-700">
-          {showCheckbox && (
-            <HeaderCheckbox
-              isAllSelected={isAllSelected}
-              isSomeSelected={isSomeSelected}
-              onChange={handleSelectAll}
-            />
-          )}
-          {columns.map((column) => {
-            const width = columnWidths[column.key] ?? parseWidth(column.width);
-            return (
-              <th
-                key={column.key}
-                ref={(el) => setHeaderCellRef(column.key, el)}
-                className="border-b-2 border-blue-800 p-0 m-0"
-                style={{
-                  width,
-                  minWidth: MIN_COLUMN_WIDTH,
-                  position: "sticky",
-                  top: 0,
-                  zIndex: 10,
-                  background:
-                    "linear-gradient(to right, rgb(37, 99, 235), rgb(29, 78, 216))",
-                  boxSizing: "border-box",
-                }}
-              >
-                <Resizable
-                  size={{
-                    width: "100%",
-                    height: "100%",
-                  }}
-                  enable={{ right: true }}
-                  minWidth={MIN_COLUMN_WIDTH}
-                  onResizeStop={(_e, _dir, ref) => {
-                    const newWidth = ref.offsetWidth;
-                    console.log(`Resized ${column.key} to:`, newWidth);
-                    setColumnWidths((prev) => ({
-                      ...prev,
-                      [column.key]: newWidth,
-                    }));
-                  }}
-                  handleStyles={{
-                    right: {
-                      width: "20px",
-                      right: "0",
-                      top: "0",
-                      bottom: "0",
-                      cursor: "col-resize",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      background: "rgba(59, 130, 246, 0.2)",
-                    },
-                  }}
-                  handleClasses={{
-                    right: "hover:bg-blue-400",
-                  }}
-                  handleComponent={{
-                    right: (
-                      <SwapHorizIcon
-                        fontSize="small"
-                        sx={{ color: "rgba(255, 255, 255, 0.9)" }}
-                      />
-                    ),
-                  }}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    width: "100%",
-                    boxSizing: "border-box",
-                  }}
-                >
-                  <div className="px-6 py-4 text-left text-xs font-semibold text-white uppercase tracking-wider select-none w-full">
-                    {column.label}
-                  </div>
-                </Resizable>
-              </th>
-            );
-          })}
-        </tr>
-      ),
-      [
-        showCheckbox,
-        isAllSelected,
-        isSomeSelected,
-        handleSelectAll,
-        columns,
-        columnWidths,
-        setHeaderCellRef,
-        parseWidth,
-      ]
-    );
-
-    // Memoize item content renderer
-    const itemContent = useCallback(
-      (_index: number, row: RowData | undefined) => {
-        // Handle case where row might be undefined (sparse data with totalCount)
-        if (!row) {
-          return (
-            <>
-              {showCheckbox && (
-                <td
-                  className="px-6 py-4 border-b border-slate-100 text-left"
-                  style={CHECKBOX_CELL_STYLE}
-                />
-              )}
-              {columns.map((column) => (
-                <td
-                  key={column.key}
-                  className="px-6 py-4 text-sm text-slate-700 border-b border-slate-100 whitespace-nowrap text-left"
-                  style={{
-                    width: columnWidths[column.key] ?? parseWidth(column.width),
-                    minWidth:
-                      columnWidths[column.key] ?? parseWidth(column.width),
-                    maxWidth:
-                      columnWidths[column.key] ?? parseWidth(column.width),
-                    boxSizing: "border-box",
-                  }}
-                >
-                  <div className="text-gray-400 text-xs">Loading...</div>
-                </td>
-              ))}
-            </>
-          );
-        }
-
-        return (
-          <>
-            {showCheckbox && (
-              <RowCheckbox
-                checked={selectedRows.has(row.id)}
-                onChange={() => handleRowSelect(row.id)}
-              />
-            )}
-            {columns.map((column) => (
-              <td
-                key={column.key}
-                className="px-6 py-4 text-sm text-slate-700 border-b border-slate-100 whitespace-nowrap text-left"
-                style={{
-                  width: columnWidths[column.key] ?? parseWidth(column.width),
-                  minWidth:
-                    columnWidths[column.key] ?? parseWidth(column.width),
-                  maxWidth:
-                    columnWidths[column.key] ?? parseWidth(column.width),
-                  boxSizing: "border-box",
-                }}
-              >
-                <TableCell row={row} column={column} renderCell={renderCell} />
-              </td>
-            ))}
-          </>
-        );
-      },
-      [
-        showCheckbox,
-        selectedRows,
-        handleRowSelect,
-        columns,
-        renderCell,
-        columnWidths,
-        parseWidth,
-      ]
-    );
-
-    // Memoize container style
-    const containerStyle = useMemo(() => ({ height }), [height]);
+  const itemContent = (_index: number, row: RowData | undefined) => {
+    if (!row) {
+      return (
+        <LoadingRowCells
+          columns={columns}
+          columnWidths={columnWidths}
+          showCheckbox={showCheckbox}
+        />
+      );
+    }
 
     return (
-      <div className="w-full bg-gradient-to-br from-slate-50 to-slate-100 p-4">
-        <div className="w-full">
-          <div className="mb-4">
-            <h1 className="text-2xl font-bold text-slate-800 mb-1">{title}</h1>
-            <p className="text-slate-600 text-sm">
-              Showing {data.length} of {effectiveTotalCount}{" "}
-              {effectiveTotalCount === 1 ? "item" : "items"}
-              {showCheckbox &&
-                selectedRows.size > 0 &&
-                ` · ${selectedRows.size} selected`}
-            </p>
-          </div>
+      <DataRowCells
+        row={row}
+        columns={columns}
+        columnWidths={columnWidths}
+        showCheckbox={showCheckbox}
+        selectedRows={selectedRows}
+        onRowSelect={handleRowSelect}
+        renderCell={renderCell}
+      />
+    );
+  };
 
-          <div className="w-full bg-white rounded-lg shadow-lg overflow-hidden border border-slate-200">
-            <TableVirtuoso
-              style={containerStyle}
-              data={data}
-              totalCount={effectiveTotalCount}
-              context={tableContext}
-              fixedHeaderContent={fixedHeaderContent}
-              itemContent={itemContent}
-              components={tableComponents}
-              overscan={10}
-              endReached={onEndReached}
-            />
-          </div>
+  return (
+    <div className="w-full bg-gradient-to-br from-slate-50 to-slate-100 p-4">
+      <div className="w-full">
+        <div className="mb-4">
+          <h1 className="text-2xl font-bold text-slate-800 mb-1">{title}</h1>
+          <p className="text-slate-600 text-sm">
+            Showing {data.length} of {effectiveTotalCount}{" "}
+            {effectiveTotalCount === 1 ? "item" : "items"}
+            {showCheckbox &&
+              selectedRows.size > 0 &&
+              ` · ${selectedRows.size} selected`}
+          </p>
+        </div>
+
+        <div className="w-full bg-white rounded-lg shadow-lg overflow-hidden border border-slate-200">
+          <TableVirtuoso
+            style={{ height }}
+            data={data}
+            totalCount={effectiveTotalCount}
+            context={tableContext}
+            fixedHeaderContent={fixedHeaderContent}
+            itemContent={itemContent}
+            components={tableComponents}
+            overscan={10}
+            endReached={onEndReached}
+          />
         </div>
       </div>
-    );
-  }
-);
-
-// VirtuosoTable.displayName = "VirtuosoTable";
+    </div>
+  );
+};
 
 export default VirtuosoTable;
