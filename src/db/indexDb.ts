@@ -1,6 +1,11 @@
 // db.js - helper for IndexedDB
 
-import { DB_NAME, DB_VERSION, STORE_NAME } from "../constants";
+import {
+  DB_NAME,
+  DB_VERSION,
+  STORE_NAME,
+  NAME_INDEX_STORE,
+} from "../constants";
 
 export const initDB = () => {
   return new Promise<IDBDatabase>((resolve, reject) => {
@@ -21,6 +26,27 @@ export const initDB = () => {
         const store = tx?.objectStore(STORE_NAME);
         if (store && !store.indexNames.contains("byParentId")) {
           store.createIndex("byParentId", "parent_id", { unique: false });
+        }
+      }
+
+      if (!db.objectStoreNames.contains(NAME_INDEX_STORE)) {
+        const indexStore = db.createObjectStore(NAME_INDEX_STORE, {
+          keyPath: ["token", "fileId"],
+        });
+        indexStore.createIndex("byToken", "token", { unique: false });
+        indexStore.createIndex("byTokenParent", ["token", "parent_id"], {
+          unique: false,
+        });
+      } else {
+        const tx = (event.target as IDBOpenDBRequest).transaction;
+        const indexStore = tx?.objectStore(NAME_INDEX_STORE);
+        if (indexStore && !indexStore.indexNames.contains("byToken")) {
+          indexStore.createIndex("byToken", "token", { unique: false });
+        }
+        if (indexStore && !indexStore.indexNames.contains("byTokenParent")) {
+          indexStore.createIndex("byTokenParent", ["token", "parent_id"], {
+            unique: false,
+          });
         }
       }
     };

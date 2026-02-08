@@ -9,16 +9,20 @@ import {
 } from "../utils/fileActionsUtil";
 import { renderFileCell } from "./RenderCell";
 import { PREFETCH_THRESHOLD, FILE_TABLE_COLUMNS } from "../constants/contants";
-import {
-  ContextMenu,
-  type ContextMenuOption,
-  type ContextMenuPosition,
-} from "./ContextMenu";
-import { useState, useEffect, useRef, useCallback } from "react";
+import type { ContextMenuOption, ContextMenuPosition } from "./ContextMenu";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 import ContentCutIcon from "@mui/icons-material/ContentCut";
 import ContentPasteIcon from "@mui/icons-material/ContentPaste";
 import DeleteIcon from "@mui/icons-material/Delete";
+import { FileTableFilterInput } from "./FileTableFilterInput";
+import { FileTableContextMenu } from "./FileTableContextMenu";
+import { searchFilesByNameAndParentId } from "../db/utils";
+import { debounce } from "../utils/debounce";
+
+const ROOT_PARENT_ID = "0";
+const SEARCH_LIMIT = 5000;
+const SEARCH_DEBOUNCE_MS = 150;
 
 type Props = {
   files: FileItem[];
@@ -40,40 +44,104 @@ export function FileTable({
   const [selectedRows, setSelectedRows] = useState<Set<number | string>>(
     () => new Set()
   );
+  const [filterText, setFilterText] = useState("");
+  const [filteredFiles, setFilteredFiles] = useState<FileItem[] | null>(null);
+  const [isSearching, setIsSearching] = useState(false);
   const [contextMenu, setContextMenu] = useState<{
     position: ContextMenuPosition;
     item: FileItem;
   } | null>(null);
   const lastSelectedIndexRef = useRef<number | null>(null);
+  const searchRequestIdRef = useRef(0);
+
   const fileStore = useFileStore();
+  const effectiveParentId = currentParentId ?? ROOT_PARENT_ID;
+  const normalizedFilter = filterText.trim();
+  const isFilterActive = normalizedFilter.length > 0;
+  const shouldSearchByIndex = normalizedFilter.length >= 3;
+  const activeFiles = filteredFiles ?? files;
+  const activeTotalCount = filteredFiles ? filteredFiles.length : totalCount;
 
-  // Reset selectedRows when parentID changes
+  const runIndexedSearch = useCallback(
+    async (
+      normalized: string,
+      parentId: string | number,
+      requestId: number
+    ) => {
+      const results = (await searchFilesByNameAndParentId(
+        normalized,
+        parentId,
+        SEARCH_LIMIT
+      )) as unknown as FileItem[];
+
+      if (requestId !== searchRequestIdRef.current) return;
+      setFilteredFiles(results);
+      setIsSearching(false);
+    },
+    []
+  );
+
+  const debouncedSearch = useMemo(
+    () =>
+      debounce((normalized: string, parentId: string | number, requestId: number) => {
+        void runIndexedSearch(normalized, parentId, requestId);
+      }, SEARCH_DEBOUNCE_MS),
+    [runIndexedSearch]
+  );
+
+  // Reset table local state when moving between folders.
   useEffect(() => {
-    const timer = setTimeout(() => {
-      setSelectedRows(new Set());
-      lastSelectedIndexRef.current = null;
-    }, 0);
-
-    return () => clearTimeout(timer);
+    searchRequestIdRef.current += 1;
+    setSelectedRows(new Set());
+    lastSelectedIndexRef.current = null;
+    setFilterText("");
+    setFilteredFiles(null);
+    setIsSearching(false);
   }, [currentParentId]);
+
+  useEffect(() => {
+    if (!isFilterActive) {
+      setFilteredFiles(null);
+      setIsSearching(false);
+      return;
+    }
+
+    if (!shouldSearchByIndex) {
+      setFilteredFiles(null);
+      setIsSearching(false);
+      return;
+    }
+
+    const requestId = ++searchRequestIdRef.current;
+    setIsSearching(true);
+    debouncedSearch(normalizedFilter, effectiveParentId, requestId);
+  }, [
+    isFilterActive,
+    shouldSearchByIndex,
+    normalizedFilter,
+    effectiveParentId,
+    debouncedSearch,
+  ]);
 
   // Fetch more data if current files are below threshold
   useEffect(() => {
     if (
+      !isFilterActive &&
       files.length < PREFETCH_THRESHOLD &&
       files.length < totalCount &&
       !isLoading
     ) {
       onLoadMore();
     }
-  }, [files.length, totalCount, isLoading, onLoadMore]);
+  }, [isFilterActive, files.length, totalCount, isLoading, onLoadMore]);
 
-  const handleSelectionChange = (selectedIds: (number | string)[]) => {
+  const handleSelectionChange = useCallback((selectedIds: (number | string)[]) => {
     setSelectedRows(new Set(selectedIds));
-  };
+  }, []);
 
-  const handleRowClick = (item: FileItem, event: React.MouseEvent) => {
-    const currentIndex = files.findIndex((file) => file.id === item.id);
+  const handleRowClick = useCallback((item: FileItem, event: React.MouseEvent) => {
+    const currentIndex = activeFiles.findIndex((file) => file.id === item.id);
+    if (currentIndex === -1) return;
 
     // Shift+Click: Select range from last selected to current
     if (event.shiftKey && lastSelectedIndexRef.current !== null) {
@@ -83,7 +151,7 @@ export function FileTable({
       setSelectedRows((prev) => {
         const newSelected = new Set(prev);
         for (let i = start; i <= end; i++) {
-          newSelected.add(files[i].id);
+          newSelected.add(activeFiles[i].id);
         }
         return newSelected;
       });
@@ -102,7 +170,7 @@ export function FileTable({
 
     // Update last selected index
     lastSelectedIndexRef.current = currentIndex;
-  };
+  }, [activeFiles]);
 
   const handleContextMenu = useCallback(
     (item: FileItem, position: ContextMenuPosition) => {
@@ -116,12 +184,12 @@ export function FileTable({
   );
 
   const handleCopy = useCallback(() => {
-    copySelected(files, selectedRows, fileStore);
-  }, [files, selectedRows, fileStore]);
+    copySelected(activeFiles, selectedRows, fileStore);
+  }, [activeFiles, selectedRows, fileStore]);
 
   const handleCut = useCallback(() => {
-    cutSelected(files, selectedRows, fileStore);
-  }, [files, selectedRows, fileStore]);
+    cutSelected(activeFiles, selectedRows, fileStore);
+  }, [activeFiles, selectedRows, fileStore]);
 
   const handlePaste = useCallback(async () => {
     await pasteClipboard(files, totalCount, currentParentId, fileStore);
@@ -131,39 +199,51 @@ export function FileTable({
     setSelectedRows(new Set());
     await deleteSelected(
       selectedRows,
-      files.length,
+      activeFiles.length,
       totalCount,
       PREFETCH_THRESHOLD,
       onLoadMore,
       fileStore
     );
-  }, [selectedRows, files.length, totalCount, onLoadMore, fileStore]);
+  }, [selectedRows, activeFiles.length, totalCount, onLoadMore, fileStore]);
 
-  const contextMenuOptions: ContextMenuOption[] = [
-    {
-      label: "Copy",
-      icon: <ContentCopyIcon fontSize="small" />,
-      onClick: handleCopy,
+  const handleEndReached = useCallback(
+    (index: number) => {
+      if (!isFilterActive && index >= files.length - PREFETCH_THRESHOLD) {
+        onLoadMore();
+      }
     },
-    {
-      label: "Cut",
-      icon: <ContentCutIcon fontSize="small" />,
-      onClick: handleCut,
-    },
-    {
-      label: "Paste",
-      icon: <ContentPasteIcon fontSize="small" />,
-      onClick: handlePaste,
-      disabled: !fileStore.clipboard,
-    },
-    { divider: true },
-    {
-      label: "Delete",
-      icon: <DeleteIcon fontSize="small" />,
-      onClick: handleDelete,
-      className: "text-red-600 hover:bg-red-50",
-    },
-  ];
+    [isFilterActive, files.length, onLoadMore]
+  );
+
+  const contextMenuOptions: ContextMenuOption[] = useMemo(
+    () => [
+      {
+        label: "Copy",
+        icon: <ContentCopyIcon fontSize="small" />,
+        onClick: handleCopy,
+      },
+      {
+        label: "Cut",
+        icon: <ContentCutIcon fontSize="small" />,
+        onClick: handleCut,
+      },
+      {
+        label: "Paste",
+        icon: <ContentPasteIcon fontSize="small" />,
+        onClick: handlePaste,
+        disabled: !fileStore.clipboard,
+      },
+      { divider: true },
+      {
+        label: "Delete",
+        icon: <DeleteIcon fontSize="small" />,
+        onClick: handleDelete,
+        className: "text-red-600 hover:bg-red-50",
+      },
+    ],
+    [handleCopy, handleCut, handlePaste, handleDelete, fileStore.clipboard]
+  );
 
   if (isLoading) {
     return <div className="py-8 text-center">Loading...</div>;
@@ -171,30 +251,34 @@ export function FileTable({
 
   return (
     <>
-      <ContextMenu
-        position={contextMenu?.position ?? null}
+      <FileTableContextMenu
+        contextMenu={contextMenu}
         options={contextMenuOptions}
         onClose={() => setContextMenu(null)}
       />
-      <VirtualizedTable
-        data={files}
-        columns={[...FILE_TABLE_COLUMNS]}
-        totalCount={totalCount}
+      <FileTableFilterInput
+        value={filterText}
+        onChange={setFilterText}
+      />
+      {isSearching ? (
+        <div className="py-8 text-center">Searching...</div>
+      ) : (
+        <VirtualizedTable
+          data={activeFiles}
+          columns={[...FILE_TABLE_COLUMNS]}
+          totalCount={activeTotalCount}
         renderCell={renderFileCell}
         showCheckbox={true}
         onSelectionChange={handleSelectionChange}
-        onEndReached={(index) => {
-          if (index >= files.length - PREFETCH_THRESHOLD) {
-            onLoadMore();
-          }
-        }}
+        onEndReached={handleEndReached}
         onRowClick={(item, event) => handleRowClick(item as FileItem, event)}
         onRowDoubleClick={(item) => onDoubleClick(item as FileItem)}
         onContextMenu={(item, position) =>
-          handleContextMenu(item as FileItem, position)
-        }
-        selectedRows={selectedRows}
-      />
+            handleContextMenu(item as FileItem, position)
+          }
+          selectedRows={selectedRows}
+        />
+      )}
     </>
   );
 }

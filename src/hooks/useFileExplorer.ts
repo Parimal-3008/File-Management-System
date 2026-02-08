@@ -3,6 +3,7 @@ import {
   countChildrenByParentId,
   getFilesByParentId,
   getFileById,
+  ensureParentIndexed,
 } from "../db/utils";
 import { useFileStore } from "../zustand/fileStore";
 import type { FileItem } from "../zustand/fileStore";
@@ -42,6 +43,7 @@ export function useFileExplorer() {
 
         if (requestId !== requestIdRef.current) return;
         setFiles(initialFiles as FileItem[]);
+        ensureParentIndexed(parentId);
       } finally {
         setLoading(false);
       }
