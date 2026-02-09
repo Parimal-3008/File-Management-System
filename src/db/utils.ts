@@ -6,19 +6,28 @@ import {
 } from "../constants";
 import { openDB } from "idb";
 
-interface FileRecord {
+export interface FileRecord {
   id: string;
   name?: string;
   path: string;
   directory?: string;
-  parent_id?: string | null;
+  parentID?: string | null;
   [key: string]: unknown;
+}
+
+export interface FolderInfo {
+  folder: FileRecord;
+  totalSizeBytes: number;
+  totalFiles: number;
+  totalFolders: number;
+  totalItems: number;
+  directChildren: number;
 }
 
 interface NameIndexRecord {
   token: string;
   fileId: string | number;
-  parent_id: string | number | null;
+  parentID: string | number | null;
 }
 
 type NameIndexWritableStore = {
@@ -37,7 +46,7 @@ async function openFileDB() {
 
       // Ensure required indexes exist (safe to call conditionally).
       if (!store.indexNames.contains("byParentId")) {
-        store.createIndex("byParentId", "parent_id", { unique: false });
+        store.createIndex("byParentId", "parentID", { unique: false });
       }
 
       if (!db.objectStoreNames.contains(NAME_INDEX_STORE)) {
@@ -45,7 +54,7 @@ async function openFileDB() {
           keyPath: ["token", "fileId"],
         });
         indexStore.createIndex("byToken", "token", { unique: false });
-        indexStore.createIndex("byTokenParent", ["token", "parent_id"], {
+        indexStore.createIndex("byTokenParent", ["token", "parentID"], {
           unique: false,
         });
       } else {
@@ -54,7 +63,7 @@ async function openFileDB() {
           indexStore.createIndex("byToken", "token", { unique: false });
         }
         if (!indexStore.indexNames.contains("byTokenParent")) {
-          indexStore.createIndex("byTokenParent", ["token", "parent_id"], {
+          indexStore.createIndex("byTokenParent", ["token", "parentID"], {
             unique: false,
           });
         }
@@ -67,6 +76,20 @@ const TRIGRAM_SIZE = 3;
 const INDEX_BUILD_BATCH_SIZE = 1000;
 const indexedParents = new Set<string>();
 const indexingInFlight = new Map<string, Promise<void>>();
+
+const normalizeFileRecord = (item: unknown): FileRecord => {
+  const record = (item ?? {}) as Record<string, unknown>;
+  const parentID =
+    (record.parentID as string | number | null | undefined) ??
+    (record.parentId as string | number | null | undefined) ??
+    (record.parent_id as string | number | null | undefined) ??
+    null;
+
+  return {
+    ...(record as FileRecord),
+    parentID: parentID === null ? null : String(parentID),
+  };
+};
 
 const buildTrigrams = (name: string) => {
   const normalized = name.trim().toLowerCase();
@@ -98,8 +121,8 @@ const updateNameIndexForItems = (
 
   for (const [token, idsToAdd] of tokenMap) {
     for (const fileId of idsToAdd) {
-      const parentId = items.find((item) => item.id === fileId)?.parent_id;
-      indexStore.put({ token, fileId, parent_id: parentId ?? null });
+      const parentId = items.find((item) => item.id === fileId)?.parentID;
+      indexStore.put({ token, fileId, parentID: parentId ?? null });
     }
   }
 };
@@ -118,7 +141,7 @@ export async function batchInsert(items: unknown[], batchSize = 1000) {
     const store = tx.objectStore(STORE_NAME);
 
     for (const item of batch) {
-      store.put(item);
+      store.put(normalizeFileRecord(item));
     }
 
     await tx.done;
@@ -135,10 +158,11 @@ export async function insertFiles(items: FileRecord[]) {
     const tx = db.transaction([STORE_NAME, NAME_INDEX_STORE], "readwrite");
     const store = tx.objectStore(STORE_NAME);
     const indexStore = tx.objectStore(NAME_INDEX_STORE);
-    for (const item of items) {
+    const normalizedItems = items.map((item) => normalizeFileRecord(item));
+    for (const item of normalizedItems) {
       store.put(item);
     }
-    updateNameIndexForItems(indexStore, items);
+    updateNameIndexForItems(indexStore, normalizedItems);
     await tx.done;
   } finally {
     db.close();
@@ -164,8 +188,8 @@ export async function deleteFilesByIds(ids: (string | number)[]) {
   }
 }
 
-// Count total children of a directory by parent_id
-// For root, parent_id is 0
+// Count total children of a directory by parentID
+// For root, parentID is 0
 export async function countChildrenByParentId(
   parentId: string | number = 0
 ): Promise<number> {
@@ -184,9 +208,9 @@ export async function countChildrenByParentId(
   }
 }
 
-// Get children of a directory by parent_id
+// Get children of a directory by parentID
 // Supports simple pagination via `offset` + `limit`
-// For root, parent_id is 0
+// For root, parentID is 0
 export async function getFilesByParentId(
   parentId: string | number = 0,
   limit: number = 150,
@@ -283,6 +307,73 @@ export async function getFileById(id: string): Promise<FileRecord | null> {
     return file || null;
   } catch (error) {
     console.error("Error fetching file by id:", error);
+    return null;
+  } finally {
+    db.close();
+  }
+}
+
+export async function getFolderInfoById(
+  folderId: string | number
+): Promise<FolderInfo | null> {
+  const db = await openFileDB();
+
+  try {
+    const tx = db.transaction(STORE_NAME, "readonly");
+    const store = tx.objectStore(STORE_NAME);
+    const parentIndex = store.index("byParentId");
+
+    const folder = (await store.get(folderId)) as FileRecord | undefined;
+    if (!folder || String(folder.type) !== "folder") return null;
+
+    let totalSizeBytes = 0;
+    let totalFiles = 0;
+    let totalFolders = 0;
+    let totalItems = 0;
+
+    const rootChildren = (await parentIndex.getAll(folderId)) as FileRecord[];
+    const directChildren = rootChildren.length;
+
+    const queue: (string | number)[] = [folderId];
+    const visited = new Set<string | number>([folderId]);
+
+    while (queue.length > 0) {
+      const currentParentId = queue.shift() as string | number;
+      const children = (await parentIndex.getAll(
+        currentParentId
+      )) as FileRecord[];
+
+      for (const child of children) {
+        totalItems += 1;
+        const isFolder = String(child.type) === "folder";
+        if (isFolder) {
+          totalFolders += 1;
+          if (!visited.has(child.id)) {
+            visited.add(child.id);
+            queue.push(child.id);
+          }
+          continue;
+        }
+
+        totalFiles += 1;
+        const size = Number(child.size);
+        if (Number.isFinite(size) && size > 0) {
+          totalSizeBytes += size;
+        }
+      }
+    }
+
+    await tx.done;
+    return {
+      folder,
+      totalSizeBytes,
+      totalFiles,
+      totalFolders,
+      totalItems,
+      directChildren,
+    };
+  } catch (error) {
+    console.error("Error getting folder info:", error);
     return null;
   } finally {
     db.close();

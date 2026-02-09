@@ -78,7 +78,7 @@ export function useFileExplorer() {
     if (currentParentId === ROOT_ID) return;
 
     const current = await getFileById(currentParentId);
-    const parentId = current?.parent_id ?? ROOT_ID;
+    const parentId = current?.parentID ?? ROOT_ID;
 
     setCurrentParentId(parentId);
     setBreadcrumb((prev) => prev.slice(0, -1));

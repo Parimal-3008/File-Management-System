@@ -49,12 +49,12 @@ export async function pasteClipboard(
     ...item,
     id: crypto.randomUUID(),
     name: `${item.name} copy`,
-    parent_id: currentParentId,
+    parentID: currentParentId,
     modified: now,
   });
   const makeMove = (item: FileItem): FileItem => ({
     ...item,
-    parent_id: currentParentId,
+    parentID: currentParentId,
     modified: now,
   });
 
@@ -66,9 +66,7 @@ export async function pasteClipboard(
         ? movedItems.find((m) => m.id === file.id) ?? file
         : file
     );
-    const itemsToAdd = movedItems.filter(
-      (item) => !idsInCurrent.has(item.id)
-    );
+    const itemsToAdd = movedItems.filter((item) => !idsInCurrent.has(item.id));
     await deleteFilesByIds(clipboardItems.map((item) => item.id));
     await insertFiles(movedItems);
     fileStore.setFiles([...updatedFiles, ...itemsToAdd]);

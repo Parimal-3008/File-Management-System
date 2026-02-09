@@ -3,14 +3,14 @@ import { batchInsert } from "../db/utils";
 onmessage = async ({ data }) => {
   if (data.type === "INIT_PARSE") {
     try {
-      const response = await fetch("../../big.ndjson");
+      const response = await fetch("../../big(1).ndjson");
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
 
       let buffer = "";
       let processed = 0;
       const totalBytes = parseInt(
-        response.headers.get("content-length") || "0",
+        response.headers.get("content-length") || "0"
       );
       let bytesReceived = 0;
 
@@ -33,7 +33,6 @@ onmessage = async ({ data }) => {
 
         for (const line of lines) {
           if (!line.trim()) continue;
-
           try {
             const parsed = JSON.parse(line);
             items.push(parsed);

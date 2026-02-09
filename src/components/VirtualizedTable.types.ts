@@ -20,6 +20,8 @@ export interface VirtuosoTableProps {
   data?: RowData[];
   columns?: Column[];
   title?: string;
+  headerRight?: React.ReactNode;
+  isSearching?: boolean;
   height?: string;
   showCheckbox?: boolean;
   onSelectionChange?: (selectedIds: (number | string)[]) => void;

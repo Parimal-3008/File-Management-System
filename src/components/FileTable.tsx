@@ -10,11 +10,20 @@ import {
 import { renderFileCell } from "./RenderCell";
 import { PREFETCH_THRESHOLD, FILE_TABLE_COLUMNS } from "../constants/contants";
 import type { ContextMenuOption, ContextMenuPosition } from "./ContextMenu";
-import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import {
+  useState,
+  useEffect,
+  useRef,
+  useCallback,
+  useMemo,
+  lazy,
+  Suspense,
+} from "react";
 import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 import ContentCutIcon from "@mui/icons-material/ContentCut";
 import ContentPasteIcon from "@mui/icons-material/ContentPaste";
 import DeleteIcon from "@mui/icons-material/Delete";
+import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 import { FileTableFilterInput } from "./FileTableFilterInput";
 import { FileTableContextMenu } from "./FileTableContextMenu";
 import { searchFilesByNameAndParentId } from "../db/utils";
@@ -23,6 +32,7 @@ import { debounce } from "../utils/debounce";
 const ROOT_PARENT_ID = "0";
 const SEARCH_LIMIT = 5000;
 const SEARCH_DEBOUNCE_MS = 150;
+const FileInfoDialog = lazy(() => import("./FileInfoDialog"));
 
 type Props = {
   files: FileItem[];
@@ -51,6 +61,8 @@ export function FileTable({
     position: ContextMenuPosition;
     item: FileItem;
   } | null>(null);
+  const [isInfoDialogOpen, setIsInfoDialogOpen] = useState(false);
+  const [infoItem, setInfoItem] = useState<FileItem | null>(null);
   const lastSelectedIndexRef = useRef<number | null>(null);
   const searchRequestIdRef = useRef(0);
 
@@ -207,6 +219,13 @@ export function FileTable({
     );
   }, [selectedRows, activeFiles.length, totalCount, onLoadMore, fileStore]);
 
+  const handleGetInfo = useCallback(() => {
+    const item = contextMenu?.item;
+    if (!item) return;
+    setInfoItem(item);
+    setIsInfoDialogOpen(true);
+  }, [contextMenu]);
+
   const handleEndReached = useCallback(
     (index: number) => {
       if (!isFilterActive && index >= files.length - PREFETCH_THRESHOLD) {
@@ -234,6 +253,12 @@ export function FileTable({
         onClick: handlePaste,
         disabled: !fileStore.clipboard,
       },
+      {
+        label: "Get info",
+        icon: <InfoOutlinedIcon fontSize="small" />,
+        onClick: handleGetInfo,
+        disabled: !contextMenu?.item,
+      },
       { divider: true },
       {
         label: "Delete",
@@ -242,7 +267,15 @@ export function FileTable({
         className: "text-red-600 hover:bg-red-50",
       },
     ],
-    [handleCopy, handleCut, handlePaste, handleDelete, fileStore.clipboard]
+    [
+      handleCopy,
+      handleCut,
+      handlePaste,
+      handleGetInfo,
+      handleDelete,
+      fileStore.clipboard,
+      contextMenu,
+    ]
   );
 
   if (isLoading) {
@@ -256,17 +289,28 @@ export function FileTable({
         options={contextMenuOptions}
         onClose={() => setContextMenu(null)}
       />
-      <FileTableFilterInput
-        value={filterText}
-        onChange={setFilterText}
-      />
-      {isSearching ? (
-        <div className="py-8 text-center">Searching...</div>
-      ) : (
-        <VirtualizedTable
-          data={activeFiles}
-          columns={[...FILE_TABLE_COLUMNS]}
-          totalCount={activeTotalCount}
+      {isInfoDialogOpen ? (
+        <Suspense fallback={null}>
+          <FileInfoDialog
+            open={isInfoDialogOpen}
+            item={infoItem}
+            onClose={() => setIsInfoDialogOpen(false)}
+          />
+        </Suspense>
+      ) : null}
+      <VirtualizedTable
+        data={activeFiles}
+        columns={[...FILE_TABLE_COLUMNS]}
+        totalCount={activeTotalCount}
+        isSearching={isSearching}
+        headerRight={
+          <div className="flex items-center">
+            <FileTableFilterInput
+              value={filterText}
+              onChange={setFilterText}
+            />
+          </div>
+        }
         renderCell={renderFileCell}
         showCheckbox={true}
         onSelectionChange={handleSelectionChange}
@@ -274,11 +318,10 @@ export function FileTable({
         onRowClick={(item, event) => handleRowClick(item as FileItem, event)}
         onRowDoubleClick={(item) => onDoubleClick(item as FileItem)}
         onContextMenu={(item, position) =>
-            handleContextMenu(item as FileItem, position)
-          }
-          selectedRows={selectedRows}
-        />
-      )}
+          handleContextMenu(item as FileItem, position)
+        }
+        selectedRows={selectedRows}
+      />
     </>
   );
 }

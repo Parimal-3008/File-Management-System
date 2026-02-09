@@ -15,6 +15,8 @@ const VirtuosoTable = ({
   data: propData,
   columns: propColumns,
   title = "Employee Directory",
+  headerRight,
+  isSearching = false,
   height = "600px",
   showCheckbox = true,
   onSelectionChange,
@@ -177,7 +179,10 @@ const VirtuosoTable = ({
     <div className="w-full bg-gradient-to-br from-slate-50 to-slate-100 p-4">
       <div className="w-full">
         <div className="mb-4">
-          <h1 className="text-2xl font-bold text-slate-800 mb-1">{title}</h1>
+          <div className="mb-1 flex items-center justify-between gap-4">
+            <h1 className="text-2xl font-bold text-slate-800">{title}</h1>
+            {headerRight ? <div className="shrink-0">{headerRight}</div> : null}
+          </div>
           <p className="text-slate-600 text-sm">
             Showing {data.length} of {effectiveTotalCount}{" "}
             {effectiveTotalCount === 1 ? "item" : "items"}
@@ -187,19 +192,27 @@ const VirtuosoTable = ({
           </p>
         </div>
 
-        <div className="w-full bg-white rounded-lg shadow-lg overflow-hidden border border-slate-200">
-          <TableVirtuoso
-            style={{ height }}
-            data={data}
-            totalCount={effectiveTotalCount}
-            context={tableContext}
-            fixedHeaderContent={fixedHeaderContent}
-            itemContent={itemContent}
-            components={tableComponents}
-            overscan={10}
-            endReached={onEndReached}
-          />
-        </div>
+        {isSearching ? (
+          <div className="mb-3 rounded-md border border-slate-200 bg-slate-100 px-3 py-2 text-sm text-slate-700">
+            Searching...
+          </div>
+        ) : null}
+
+        {!isSearching ? (
+          <div className="w-full bg-white rounded-lg shadow-lg overflow-hidden border border-slate-200">
+            <TableVirtuoso
+              style={{ height }}
+              data={data}
+              totalCount={effectiveTotalCount}
+              context={tableContext}
+              fixedHeaderContent={fixedHeaderContent}
+              itemContent={itemContent}
+              components={tableComponents}
+              overscan={10}
+              endReached={onEndReached}
+            />
+          </div>
+        ) : null}
       </div>
     </div>
   );

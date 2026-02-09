@@ -19,13 +19,13 @@ export const initDB = () => {
           keyPath: "id",
         });
 
-        store.createIndex("byParentId", "parent_id", { unique: false });
+        store.createIndex("byParentId", "parentID", { unique: false });
       } else {
         // Ensure new index exists on upgrade for existing stores.
         const tx = (event.target as IDBOpenDBRequest).transaction;
         const store = tx?.objectStore(STORE_NAME);
         if (store && !store.indexNames.contains("byParentId")) {
-          store.createIndex("byParentId", "parent_id", { unique: false });
+          store.createIndex("byParentId", "parentID", { unique: false });
         }
       }
 
@@ -34,7 +34,7 @@ export const initDB = () => {
           keyPath: ["token", "fileId"],
         });
         indexStore.createIndex("byToken", "token", { unique: false });
-        indexStore.createIndex("byTokenParent", ["token", "parent_id"], {
+        indexStore.createIndex("byTokenParent", ["token", "parentID"], {
           unique: false,
         });
       } else {
@@ -44,7 +44,7 @@ export const initDB = () => {
           indexStore.createIndex("byToken", "token", { unique: false });
         }
         if (indexStore && !indexStore.indexNames.contains("byTokenParent")) {
-          indexStore.createIndex("byTokenParent", ["token", "parent_id"], {
+          indexStore.createIndex("byTokenParent", ["token", "parentID"], {
             unique: false,
           });
         }

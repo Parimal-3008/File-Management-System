@@ -4,7 +4,7 @@ export interface FileItem {
   id: string;
   name: string;
   type: "file" | "folder";
-  parent_id: string | number;
+  parentID: string | number;
   created: string;
   modified: string;
   size: number;

@@ -7,7 +7,7 @@ type Props = {
 
 export function FileTableFilterInput({ value, onChange }: Props) {
   return (
-    <div className="mb-3 flex items-center gap-3">
+    <div className="flex items-center">
       <div className="relative w-full max-w-md">
         <input
           type="text"
@@ -16,9 +16,8 @@ export function FileTableFilterInput({ value, onChange }: Props) {
           onChange={(event) => onChange(event.target.value)}
           className="shadow-sm"
           style={{
-            width: "18rem",
+            width: "16rem",
             height: "2rem",
-            margin: "1rem",
             borderRadius: "16px",
             border: "1px solid #cbd5f5",
             padding: "0 1rem",
