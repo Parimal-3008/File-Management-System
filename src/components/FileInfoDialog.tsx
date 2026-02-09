@@ -194,6 +194,8 @@ export default function FileInfoDialog({ open, item, onClose }: Props) {
           width: "90vw",
           maxWidth: 860,
           minHeight: 520,
+          display: "flex",
+          flexDirection: "column",
           bgcolor: "#0f172a",
           color: "#e2e8f0",
           border: "none",
@@ -206,9 +208,30 @@ export default function FileInfoDialog({ open, item, onClose }: Props) {
       <DialogTitle sx={{ borderBottom: "1px solid #334155", pb: 1.5 }}>
         {String(record?.type) === "folder" ? "Folder Info" : "File Info"}
       </DialogTitle>
-      <DialogContent sx={{ borderBottom: "1px solid #334155", px: 8, py: 8 }}>
+      <DialogContent
+        sx={{
+          borderBottom: "1px solid #334155",
+          px: isLoading ? 0 : 8,
+          py: isLoading ? 0 : 8,
+          flex: 1,
+          display: isLoading ? "flex" : "block",
+          ...(isLoading && {
+            alignItems: "center",
+            justifyContent: "center",
+          }),
+        }}
+      >
         {isLoading ? (
-          <div className="flex items-center gap-3 py-3">
+          <div
+            style={{
+              width: "100%",
+              height: "100%",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: "12px",
+            }}
+          >
             <CircularProgress size={18} />
             <Typography variant="body2" sx={{ color: "#cbd5e1" }}>
               Fetching info...
@@ -224,6 +247,7 @@ export default function FileInfoDialog({ open, item, onClose }: Props) {
               rowGap: "24px",
               marginTop: "16px",
               marginBottom: "16px",
+              overflowY: "auto",
             }}
           >
             <InfoSection title="Flags & Scan" rows={flagRows} />
